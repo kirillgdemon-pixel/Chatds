@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📻 Sumlio FM</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0a0a0f;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #app {
+            width: 100%;
+            max-width: 420px;
+            height: 100vh;
+            max-height: 820px;
+            background: #0a0a0f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .logo { font-size: 64px; margin-bottom: 8px; }
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .title span { color: #33D6FF; }
+        .status {
+            color: #555577;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+        .mic-btn {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: #0d0d16;
+            border: 3px solid #222244;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        .mic-btn:active { transform: scale(0.95); }
+        .mic-btn.active {
+            border-color: #ff4466;
+            box-shadow: 0 0 40px rgba(255, 68, 102, 0.3);
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .listeners {
+            color: #555577;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .listeners span { color: #33D6FF; font-weight: 600; }
+        .audio-player {
+            width: 100%;
+            max-width: 300px;
+            background: #0d0d16;
+            border: 1px solid #222244;
+            border-radius: 14px;
+            padding: 12px;
+        }
+        .audio-player audio {
+            width: 100%;
+            outline: none;
+        }
+        .id-display {
+            font-size: 12px;
+            color: #555577;
+            margin-top: 20px;
+            background: #0d0d16;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid #222244;
+        }
+        .id-display strong { color: #33D6FF; }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .btn-group button {
+            background: #0d0d16;
+            border: 1px solid #222244;
+            color: #fff;
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.3s;
+        }
+        .btn-group button:active { transform: scale(0.95); }
+        .btn-group button.active {
+            background: #33D6FF;
+            color: #000;
+            border-color: #33D6FF;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #111118;
+            border: 1px solid #222244;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            opacity: 0;
+            transition: 0.4s;
+            z-index: 999;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="logo">📻</div>
+    <div class="title">Sum<span>lio</span> FM</div>
+    <div class="status" id="status">⏸️ Остановлено</div>
+    
+    <div class="mic-btn" id="micBtn">
+        🎤
+    </div>
+    
+    <div class="listeners">
+        Слушателей: <span id="listenersCount">0</span>
+    </div>
+    
+    <div class="audio-player">
+        <audio id="audioPlayer" controls autoplay style="display:none;"></audio>
+        <div id="noAudio" style="text-align:center;color:#555;padding:10px;">
+            🔊 Ожидание трансляции...
+        </div>
+    </div>
+    
+    <div class="id-display">
+        Твой ID: <strong id="myId">---</strong>
+    </div>
+    
+    <div class="btn-group">
+        <button id="copyIdBtn">📋 Копировать ID</button>
+        <button id="reconnectBtn">🔄 Переподключиться</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js">
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js">
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ================================================================
+    //  FIREBASE КОНФИГ (ТВОЙ)
+    // ================================================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyBclVpE7tnCS66M6xXewpwkF6k6Xm99pW8",
+        authDomain: "simlio-9164b.firebaseapp.com",
+        databaseURL: "https://simlio-9164b-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "simlio-9164b",
+        storageBucket: "simlio-9164b.firebasestorage.app",
+        messagingSenderId: "243311367011",
+        appId: "1:243311367011:web:1853101298f6d1b0473956"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // ================================================================
+    //  СОСТОЯНИЕ
+    // ================================================================
+    const myId = 'user_' + Math.random().toString(36).substring(2, 8);
+    let isStreaming = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    // ================================================================
+    //  UI
+    // ================================================================
+    function showToast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(window.toastTimeout);
+        window.toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    document.getElementById('myId').textContent = myId;
+
+    // ================================================================
+    //  ЗАПИСЬ АУДИО
+    // ================================================================
+    document.getElementById('micBtn').addEventListener('click', async function() {
+        if (isStreaming) {
+            stopStreaming();
+        } else {
+            startStreaming();
+        }
+    });
+
+    async function startStreaming() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = function(event) {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                    // Отправляем кусок в Firebase
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        const audioData = reader.result.split(',')[1];
+                        db.ref('radio/' + myId).set({
+                            audio: audioData,
+                            timestamp: Date.now()
+                        });
+                    };
+                    reader.readAsDataURL(event.data);
+                }
+            };
+
+            mediaRecorder.start(1000); // Каждую секунду отправляем кусок
+
+            isStreaming = true;
+            document.getElementById('micBtn').classList.add('active');
+            document.getElementById('micBtn').textContent = '⏹️';
+            document.getElementById('status').textContent = '🔴 В эфире';
+            showToast('🎙️ Трансляция началась!');
+
+            // Обновляем статус в Firebase
+            db.ref('radio/' + myId + '/status').set('online');
+
+        } catch(e) {
+            showToast('❌ Ошибка доступа к микрофону: ' + e.message);
+        }
+    }
+
+    function stopStreaming() {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            mediaRecorder = null;
+        }
+
+        isStreaming = false;
+        document.getElementById('micBtn').classList.remove('active');
+        document.getElementById('micBtn').textContent = '🎤';
+        document.getElementById('status').textContent = '⏸️ Остановлено';
+        
+        db.ref('radio/' + myId + '/status').set('offline');
+        showToast('⏹️ Трансляция остановлена');
+    }
+
+    // ================================================================
+    //  ПРОСЛУШИВАНИЕ
+    // ================================================================
+    let lastTimestamp = 0;
+    let audioQueue = [];
+    let isPlaying = false;
+    const audioPlayer = document.getElementById('audioPlayer');
+    const noAudio = document.getElementById('noAudio');
+
+    // Слушаем все радиостанции
+    db.ref('radio').on('child_added', function(snapshot) {
+        const userId = snapshot.key;
+        const data = snapshot.val();
+        
+        if (userId === myId) return; // Своё не слушаем
+        
+        if (data.audio && data.timestamp > lastTimestamp) {
+            lastTimestamp = data.timestamp;
+            
+            // Создаём аудио из base64
+            const audioBlob = base64ToBlob(data.audio);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            audioPlayer.src = audioUrl;
+            audioPlayer.style.display = 'block';
+            noAudio.style.display = 'none';
+            
+            audioPlayer.play().catch(e => {});
+            
+            // Обновляем количество слушателей
+            updateListeners();
+        }
+    });
+
+    // Слушаем изменения статуса
+    db.ref('radio').on('child_changed', function(snapshot) {
+        const userId = snapshot.key;
+        const data = snapshot.val();
+        
+        if (userId === myId) return;
+        
+        if (data.status === 'offline') {
+            // Если вещание остановлено - скрываем плеер
+            if (audioPlayer.src) {
+                audioPlayer.pause();
+                audioPlayer.src = '';
+                audioPlayer.style.display = 'none';
+                noAudio.style.display = 'block';
+            }
+        }
+    });
+
+    function base64ToBlob(base64) {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: 'audio/webm' });
+    }
+
+    // ================================================================
+    //  СЛУШАТЕЛИ
+    // ================================================================
+    function updateListeners() {
+        db.ref('radio').once('value', function(snapshot) {
+            const data = snapshot.val();
+            if (!data) return;
+            
+            let count = 0;
+            for (const key in data) {
+                if (key !== myId && data[key].status === 'online') {
+                    count++;
+                }
+            }
+            document.getElementById('listenersCount').textContent = count;
+        });
+    }
+
+    // Обновляем каждые 5 секунд
+    setInterval(updateListeners, 5000);
+
+    // ================================================================
+    //  КНОПКИ
+    // ================================================================
+    document.getElementById('copyIdBtn').addEventListener('click', function() {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(myId).then(() => {
+                showToast('✅ ID скопирован: ' + myId);
+            });
+        } else {
+            showToast('📋 Твой ID: ' + myId);
+        }
+    });
+
+    document.getElementById('reconnectBtn').addEventListener('click', function() {
+        showToast('🔄 Переподключение...');
+        if (isStreaming) {
+            stopStreaming();
+            setTimeout(() => startStreaming(), 1000);
+        }
+        showToast('✅ Готово');
+    });
+
+    // ================================================================
+    //  СТАТУС ПОДКЛЮЧЕНИЯ
+    // ================================================================
+    db.ref('.info/connected').on('value', function(snap) {
+        if (snap.val() === true) {
+            showToast('✅ Подключено к серверу');
+        }
+    });
+
+    // ================================================================
+    //  ЗАПУСК
+    // ================================================================
+    console.log('📻 Sumlio FM запущено!');
+    console.log('👤 Твой ID:', myId);
+    console.log('🎙️ Нажми на микрофон, чтобы начать вещание');
+});
+</script>
+</body>
+</html>
